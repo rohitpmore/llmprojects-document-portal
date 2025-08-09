@@ -100,6 +100,7 @@
 
 # Testing code for document chat functionality
 
+import os
 import sys
 from pathlib import Path
 from langchain_community.vectorstores import FAISS
@@ -107,24 +108,33 @@ from src.single_document_chat.data_ingestion import SingleDocIngestor
 from src.single_document_chat.retriever import ConversationalRAG
 from utils.model_loader import ModelLoader
 
+# Set LLM provider to use Google instead of Groq
+os.environ["LLM_PROVIDER"] = "google"
+
 FAISS_INDEX_PATH = Path("faiss_index")
 
 def test_conversational_rag_on_pdf(pdf_path:str, question:str):
     try:
         model_loader = ModelLoader()
         
-        if FAISS_INDEX_PATH.exists():
+        # Check if FAISS index actually exists (both directory and index file)
+        faiss_index_file = FAISS_INDEX_PATH / "index.faiss"
+        
+        if FAISS_INDEX_PATH.exists() and faiss_index_file.exists(): 
             print("Loading existing FAISS index...")
-            embeddings = model_loader.load_embeddings()
-            vectorstore = FAISS.load_local(folder_path=str(FAISS_INDEX_PATH), embeddings=embeddings,allow_dangerous_deserialization=True)
-            retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 5})
+            try:
+                embeddings = model_loader.load_embeddings()
+                vectorstore = FAISS.load_local(folder_path=str(FAISS_INDEX_PATH), embeddings=embeddings, allow_dangerous_deserialization=True)
+                retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 5})
+                print("Successfully loaded existing FAISS index.")
+            except Exception as faiss_error:
+                print(f"Failed to load existing FAISS index: {faiss_error}")
+                print("Creating new FAISS index from PDF...")
+                retriever = _create_new_faiss_index(pdf_path)
         else:
             # Step 2: Ingest document and create retriever
             print("FAISS index not found. Ingesting PDF and creating index...")
-            with open(pdf_path, "rb") as f:
-                uploaded_files = [f]
-                ingestor = SingleDocIngestor()
-                retriever = ingestor.ingest_files(uploaded_files)
+            retriever = _create_new_faiss_index(pdf_path)
                 
         print("Running Conversational RAG...")
         session_id = "test_conversational_rag"
@@ -135,10 +145,23 @@ def test_conversational_rag_on_pdf(pdf_path:str, question:str):
     except Exception as e:
         print(f"Test failed: {str(e)}")
         sys.exit(1)
+
+def _create_new_faiss_index(pdf_path: str):
+    """Helper function to create a new FAISS index from a PDF file"""
+    try:
+        with open(pdf_path, "rb") as f:
+            uploaded_files = [f]
+            ingestor = SingleDocIngestor()
+            retriever = ingestor.ingest_files(uploaded_files)
+            print("Successfully created new FAISS index.")
+            return retriever
+    except Exception as e:
+        print(f"Failed to create new FAISS index: {e}")
+        raise
     
 if __name__ == "__main__":
     # Example PDF path and question
-    pdf_path = "data\\single_document_chat\\NIPS-2017-attention-is-all-you-need-Paper.pdf"
+    pdf_path = "data/single_document_chat/NIPS-2017-attention-is-all-you-need-Paper.pdf"
     question = "What is the significance of the attention mechanism? can you explain it in simple terms?"
 
     if not Path(pdf_path).exists():
