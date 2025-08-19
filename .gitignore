@@ -37,3 +37,7 @@ htmlcov/
 # Logs
 logs/
 notebooks/logs/ 
+
+# Data and FAISS index directories
+data/
+faiss_index/
